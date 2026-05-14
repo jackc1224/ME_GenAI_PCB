@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB DXF 連版規劃 GenAI</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2e3350; --accent: #4f8ef7; --accent2: #38c6a0;
+    --warn: #f0a732; --danger: #e05c5c;
+    --text: #e8eaf0; --muted: #7a82a0;
+    --radius: 10px; --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font);
+         min-height: 100vh; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border);
+           padding: 16px 32px; display: flex; align-items: center; gap: 14px; }
+  header .logo { width: 36px; height: 36px; background: var(--accent);
+                 border-radius: 8px; display: grid; place-items: center;
+                 font-weight: 700; font-size: 14px; color: #fff; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header span { font-size: 12px; color: var(--muted);
+                background: var(--surface2); padding: 3px 10px;
+                border-radius: 20px; border: 1px solid var(--border); }
+
+  .layout { display: grid; grid-template-columns: 420px 1fr;
+            gap: 0; min-height: calc(100vh - 65px); }
+
+  .panel { background: var(--surface); border-right: 1px solid var(--border);
+           padding: 24px; overflow-y: auto; }
+
+  .section { margin-bottom: 24px; }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--muted);
+                   letter-spacing: .08em; text-transform: uppercase;
+                   margin-bottom: 12px; padding-bottom: 8px;
+                   border-bottom: 1px solid var(--border); }
+
+  /* DXF上傳區 */
+  .upload-zone { border: 2px dashed var(--border); border-radius: var(--radius);
+                 padding: 28px; text-align: center; cursor: pointer;
+                 transition: all .2s; position: relative; }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent); background: rgba(79,142,247,.06); }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
+  .upload-zone p { font-size: 13px; color: var(--muted); }
+  .upload-zone .file-name { font-size: 12px; color: var(--accent2);
+                             margin-top: 8px; font-weight: 500; }
+
+  /* 表單 */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1/-1; }
+  label { font-size: 11px; color: var(--muted); font-weight: 500; }
+  input[type=text], input[type=number], select {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 7px; padding: 8px 12px;
+    font-size: 13px; width: 100%; transition: border-color .2s; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  select option { background: var(--surface2); }
+
+  /* 模式選擇按鈕 */
+  .mode-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .mode-btn { background: var(--surface2); border: 1px solid var(--border);
+              color: var(--muted); border-radius: 7px; padding: 10px 6px;
+              font-size: 11px; text-align: center; cursor: pointer;
+              transition: all .2s; line-height: 1.4; }
+  .mode-btn:hover { border-color: var(--accent); color: var(--text); }
+  .mode-btn.active { border-color: var(--accent); color: var(--accent);
+                     background: rgba(79,142,247,.1); }
+  .mode-btn .mode-icon { font-size: 18px; display: block; margin-bottom: 4px; }
+
+  /* 送出按鈕 */
+  .submit-btn { width: 100%; background: var(--accent); color: #fff;
+                border: none; border-radius: var(--radius); padding: 14px;
+                font-size: 15px; font-weight: 600; cursor: pointer;
+                transition: all .2s; display: flex; align-items: center;
+                justify-content: center; gap: 8px; margin-top: 8px; }
+  .submit-btn:hover { background: #3a7de8; transform: translateY(-1px); }
+  .submit-btn:disabled { background: var(--surface2); color: var(--muted);
+                          cursor: not-allowed; transform: none; }
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3);
+             border-top-color: #fff; border-radius: 50%;
+             animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 結果區 */
+  .result-area { padding: 28px; overflow-y: auto; }
+  .empty-state { display: flex; flex-direction: column; align-items: center;
+                 justify-content: center; height: 100%; color: var(--muted);
+                 gap: 12px; }
+  .empty-state .big-icon { font-size: 64px; opacity: .3; }
+
+  /* 尺寸卡片 */
+  .dim-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+              margin-bottom: 20px; }
+  .dim-card { background: var(--surface); border: 1px solid var(--border);
+              border-radius: var(--radius); padding: 14px; text-align: center; }
+  .dim-card .val { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .dim-card .lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .dim-card.highlight { border-color: var(--accent2); }
+  .dim-card.highlight .val { color: var(--accent2); }
+
+  /* 下載按鈕 */
+  .download-btn { display: inline-flex; align-items: center; gap: 8px;
+                  background: var(--accent2); color: #0f1117; border: none;
+                  border-radius: var(--radius); padding: 12px 24px;
+                  font-size: 14px; font-weight: 600; cursor: pointer;
+                  text-decoration: none; transition: all .2s; margin-bottom: 20px; }
+  .download-btn:hover { background: #2eb890; transform: translateY(-1px); }
+
+  /* AI報告 */
+  .ai-report { background: var(--surface); border: 1px solid var(--border);
+               border-radius: var(--radius); padding: 20px; }
+  .ai-report h3 { font-size: 13px; color: var(--accent); margin-bottom: 14px;
+                  display: flex; align-items: center; gap: 6px; }
+  .ai-report-content { font-size: 13px; line-height: 1.8; color: var(--text);
+                        white-space: pre-wrap; }
+  .ai-report-content h2, .ai-report-content h3 {
+    color: var(--accent2); font-size: 14px; margin: 14px 0 6px; }
+  .ai-report-content strong { color: var(--warn); }
+
+  /* 錯誤提示 */
+  .error-box { background: rgba(224,92,92,.1); border: 1px solid var(--danger);
+               border-radius: var(--radius); padding: 14px; color: var(--danger);
+               font-size: 13px; margin-bottom: 16px; }
+
+  /* tag */
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 20px;
+         font-size: 11px; font-weight: 600; }
+  .tag-blue { background: rgba(79,142,247,.15); color: var(--accent); }
+  .tag-green { background: rgba(56,198,160,.15); color: var(--accent2); }
+
+  .result-title { font-size: 17px; font-weight: 700; margin-bottom: 16px;
+                  display: flex; align-items: center; gap: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">AI</div>
+  <h1>PCB DXF 連版規劃 GenAI</h1>
+  <span>PCBA製程工程師專用</span>
+</header>
+
+<div class="layout">
+  <!-- 左側輸入面板 -->
+  <div class="panel">
+
+    <!-- DXF上傳 -->
+    <div class="section">
+      <div class="section-title">① 上傳 PCB DXF 檔案</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="dxfFile" accept=".dxf">
+        <div class="icon">📁</div>
+        <p>點擊或拖曳 .dxf 檔案到此</p>
+        <p>大檔案自動上傳至 MinIO 儲存</p>
+        <div class="file-name" id="fileName">未選擇檔案</div>
+      </div>
+    </div>
+
+    <!-- 基本資料 -->
+    <div class="section">
+      <div class="section-title">② 產品與尺寸</div>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>產品名稱 / 料號</label>
+          <input type="text" id="productName" value="TEST-PCB-001" placeholder="例：MB-MAIN-001">
+        </div>
+        <div class="form-group">
+          <label>單板長度 (mm) <span style="color:var(--accent2)">*</span></label>
+          <input type="number" id="pcbLength" value="0" min="0" step="0.1"
+                 placeholder="0 = 自動偵測">
+        </div>
+        <div class="form-group">
+          <label>單板寬度 (mm) <span style="color:var(--accent2)">*</span></label>
+          <input type="number" id="pcbWidth" value="0" min="0" step="0.1"
+                 placeholder="0 = 自動偵測">
+        </div>
+        <div class="form-group">
+          <label>板厚 (mm)</label>
+          <input type="number" id="thickness" value="1.6" min="0.4" max="3.2" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>製程類型</label>
+          <select id="processType">
+            <option value="SMT">SMT（表面貼片）</option>
+            <option value="THT">THT（波峰焊）</option>
+            <option value="SMT+THT">SMT + THT 混合</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 板邊模式 -->
+    <div class="section">
+      <div class="section-title">③ 板邊模式選擇</div>
+      <div class="mode-group">
+        <div class="mode-btn active" data-mode="軌道邊" onclick="setMode(this)">
+          <span class="mode-icon">⬌</span>
+          僅軌道邊<br>（兩側5mm）
+        </div>
+        <div class="mode-btn" data-mode="四周" onclick="setMode(this)">
+          <span class="mode-icon">⬛</span>
+          四周板邊<br>（全部5mm）
+        </div>
+        <div class="mode-btn" data-mode="AI判斷" onclick="setMode(this)">
+          <span class="mode-icon">🤖</span>
+          AI自動<br>判斷最佳
+        </div>
+      </div>
+      <input type="hidden" id="railMode" value="軌道邊">
+    </div>
+
+    <!-- 設備限制 -->
+    <div class="section">
+      <div class="section-title">④ 設備限制（選填）</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>最大拼版長度 (mm)</label>
+          <input type="number" id="maxLength" value="350" min="50" max="600">
+        </div>
+        <div class="form-group">
+          <label>最大拼版寬度 (mm)</label>
+          <input type="number" id="maxWidth" value="260" min="50" max="400">
+        </div>
+      </div>
+    </div>
+
+    <button class="submit-btn" id="submitBtn" onclick="submitAnalysis()">
+      <span>🚀</span> 上傳 DXF 並執行 AI 連版規劃
+    </button>
+  </div>
+
+  <!-- 右側結果區 -->
+  <div class="result-area" id="resultArea">
+    <div class="empty-state">
+      <div class="big-icon">📐</div>
+      <p>填寫左側條件後，點擊「執行AI連版規劃」</p>
+      <p style="font-size:12px">系統將自動計算最佳連版方案並產生DXF檔案</p>
+    </div>
+  </div>
+</div>
+
+<script>
+let selectedFile = null;
+let currentMode = '軌道邊';
+
+// 檔案選擇
+document.getElementById('dxfFile').addEventListener('change', function(e) {
+  selectedFile = e.target.files[0];
+  document.getElementById('fileName').textContent =
+    selectedFile ? `✅ ${selectedFile.name}` : '未選擇檔案';
+});
+
+// 拖曳上傳
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.endsWith('.dxf')) {
+    selectedFile = f;
+    document.getElementById('fileName').textContent = `✅ ${f.name}`;
+  }
+});
+
+function setMode(el) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  currentMode = el.dataset.mode;
+  document.getElementById('railMode').value = currentMode;
+}
+
+async function submitAnalysis() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> AI分析中，請稍候...';
+
+  const fd = new FormData();
+  if (selectedFile) fd.append('file', selectedFile);
+  fd.append('product_name', document.getElementById('productName').value);
+  fd.append('pcb_length', document.getElementById('pcbLength').value);
+  fd.append('pcb_width', document.getElementById('pcbWidth').value);
+  fd.append('thickness', document.getElementById('thickness').value);
+  fd.append('rail_mode', currentMode);
+  fd.append('process_type', document.getElementById('processType').value);
+  fd.append('max_panel_length', document.getElementById('maxLength').value);
+  fd.append('max_panel_width', document.getElementById('maxWidth').value);
+
+  try {
+    const res = await fetch('/api/analyze', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '伺服器錯誤');
+    renderResult(data);
+  } catch (e) {
+    document.getElementById('resultArea').innerHTML =
+      `<div class="error-box">❌ 錯誤：${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>🚀</span> 上傳 DXF 並執行 AI 連版規劃';
+  }
+}
+
+function renderResult(d) {
+  const p = d.panel;
+  const auto = d.auto_detected ? ' <span class="tag tag-green">自動偵測</span>' : '';
+  document.getElementById('resultArea').innerHTML = `
+    <div class="result-title">
+      ✅ 連版設計完成
+      <span class="tag tag-blue">${p.nx}×${p.ny} = ${p.pcb_count}片</span>
+      ${d.auto_detected ? '<span class="tag tag-green">尺寸自動偵測</span>' : ''}
+    </div>
+
+    <div class="dim-grid">
+      <div class="dim-card highlight">
+        <div class="val">${p.nx} × ${p.ny}</div>
+        <div class="lbl">拼版配置（片）</div>
+      </div>
+      <div class="dim-card highlight">
+        <div class="val">${p.total_length} × ${p.total_width}</div>
+        <div class="lbl">拼版尺寸（mm）</div>
+      </div>
+      <div class="dim-card highlight">
+        <div class="val">${p.pcb_count} 片</div>
+        <div class="lbl">每版總片數</div>
+      </div>
+      <div class="dim-card">
+        <div class="val">${p.top_rail} mm</div>
+        <div class="lbl">軌道板邊（上/下）</div>
+      </div>
+      <div class="dim-card">
+        <div class="val">${p.left_rail || 0} mm</div>
+        <div class="lbl">側邊板邊（左/右）</div>
+      </div>
+      <div class="dim-card">
+        <div class="val">${p.vcut_ok ? 'V-cut' : 'Tab'}</div>
+        <div class="lbl">分板方式</div>
+      </div>
+      <div class="dim-card">
+        <div class="val">${p.vcut_ok ? p.vcut_angle+'°' : '—'}</div>
+        <div class="lbl">V-cut角度</div>
+      </div>
+      <div class="dim-card">
+        <div class="val">${p.vcut_ok ? p.vcut_residual+'mm' : '—'}</div>
+        <div class="lbl">V-cut殘留厚度</div>
+      </div>
+      <div class="dim-card">
+        <div class="val">${p.mark_diameter} mm</div>
+        <div class="lbl">Mark點直徑</div>
+      </div>
+    </div>
+
+    <a href="${d.download_url}" class="download-btn" download>
+      ⬇ 下載連版 DXF 檔案
+    </a>
+
+    <div class="ai-report">
+      <h3>🤖 AI 連版設計分析報告</h3>
+      <div class="ai-report-content">${formatReport(d.ai_report)}</div>
+    </div>
+  `;
+}
+
+function formatReport(text) {
+  return text
+    .replace(/## (.*)/g, '<h2>$1</h2>')
+    .replace(/### (.*)/g, '<h3>$1</h3>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+}
+</script>
+</body>
+</html>
