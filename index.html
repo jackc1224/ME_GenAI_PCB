@@ -55,8 +55,18 @@ select option{background:var(--s2);}
 .yn-group{display:flex;gap:6px;}
 .yn-btn{flex:1;background:var(--s2);border:1px solid var(--bd);color:var(--muted);border-radius:7px;padding:7px 0;font-size:12px;font-weight:600;cursor:pointer;text-align:center;transition:all .2s;}
 .yn-btn:hover{border-color:var(--bd2);color:var(--text);}
-.yn-btn.y-active{border-color:var(--a2);color:var(--a2);background:rgba(56,198,160,.1);}
-.yn-btn.n-active{border-color:var(--bd2);color:var(--text);background:var(--s3);}
+.yn-btn.y-active{
+  border-color:var(--a2);
+  color:#fff !important;
+  background:rgba(56,198,160,.22);
+  box-shadow:0 0 0 1px rgba(56,198,160,.28),0 0 14px rgba(56,198,160,.16);
+}
+.yn-btn.n-active{
+  border-color:var(--bd2);
+  color:#fff !important;
+  background:var(--s3);
+  box-shadow:0 0 0 1px rgba(255,255,255,.08);
+}
 
 /* Mode buttons */
 .mode-group{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
@@ -280,14 +290,26 @@ function setMode(el){
 }
 
 function setYN(el){
-  const field=el.dataset.field; const val=el.dataset.val;
-  const grp=el.parentElement;
-  grp.querySelectorAll('.yn-btn').forEach(b=>{
-    b.classList.remove('y-active','n-active');
-    if(b.dataset.val==='Y') b.classList.add(val==='Y'?'y-active':'');
-    else b.classList.add(val==='N'?'n-active':'');
+  const field = el.dataset.field;
+  const val = el.dataset.val;
+  const grp = el.parentElement;
+
+  grp.querySelectorAll('.yn-btn').forEach(b => {
+    b.classList.remove('y-active', 'n-active');
+
+    if (b === el) {
+      if (val === 'Y') {
+        b.classList.add('y-active');
+      } else {
+        b.classList.add('n-active');
+      }
+    }
   });
-  document.getElementById(field).value=val;
+
+  const hiddenInput = document.getElementById(field);
+  if (hiddenInput) {
+    hiddenInput.value = val;
+  }
 }
 
 async function submit(){
