@@ -280,9 +280,11 @@ def gen_dxf(pcb_l, pcb_w, p, name):
         "insert": (ox, oy + tw + 4)
     })
 
-    buf = io.BytesIO()
-    doc.write(buf)
-    return buf.getvalue()
+    # ezdxf 的 doc.write() 需要「文字串流」，不能直接寫入 BytesIO。
+    # 若使用 BytesIO 會出現：a bytes-like object is required, not 'str'
+    text_buf = io.StringIO()
+    doc.write(text_buf)
+    return text_buf.getvalue().encode("utf-8")
 
 
 # ══════════════════════════════════════════
